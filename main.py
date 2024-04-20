@@ -170,6 +170,8 @@ def audio(message):
     model = whisper.load_model("base")
     result = model.transcribe(fname+'.wav')
     bot.send_message(message.from_user.id, format(result['text'])) # Отправляем пользователю, приславшему файл, его текст
+    os.remove(fname)
+    os.remove(fname+".wav")
 
 
 # Handle all other messages with content_type 'text' (content_types defaults to ['text'])
