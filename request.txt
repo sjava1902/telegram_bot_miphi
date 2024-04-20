@@ -1,0 +1,9 @@
+telebot
+nltk
+dateparser
+requests
+whisper
+subprocess
+import datetime
+pyaspeller
+setuptools-rust

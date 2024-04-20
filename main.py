@@ -10,7 +10,7 @@ import subprocess
 import os, sys
 from pathlib import Path
 import datetime
-from autocorrect import Speller
+from pyaspeller import YandexSpeller
 
 current_station = ""
 current_time = datetime.datetime.now()
@@ -110,9 +110,8 @@ time_words = ['вчера', 'сегодня', 'завтра', 'послезав�
 
 def preprocess(text):
     text = text.lower()
-    speller = Speller('ru')
-    text = speller(text)
-    text = text.replace('?', '')
+    speller = YandexSpeller()
+    text = speller.spelled(text)
     print("PREPROCESSED TEXT = ", text)
     return text
 
