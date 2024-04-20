@@ -2,9 +2,9 @@ import telebot
 from telebot import types
 import nltk
 from nltk.metrics.distance import edit_distance
-import sparknlp
+import dateparser
 
-spark = sparknlp.start()
+
 token='6463803088:AAH9iVZAv71ScKwERcscNCTyY5-4wkqZ1Ew'
 bot=telebot.TeleBot(token)
 stations = ['Б.Рокоссовского', 'Черкизовская', 'Преображенск. пл', 'Сокольники СЛ', 'Красносельская', 'Комсомольск. СЛ',
@@ -87,11 +87,34 @@ stations = ['Б.Рокоссовского', 'Черкизовская', 'Пре
  'Лианозово', 'Физтех', 'Текстильщики СЦ']
 stations_preprocessed = [x.lower() for x in stations]
 
-def get_word_by_min_distance(word):
+time_words = ['вчера', 'сегодня', 'завтра', 'послезавтра', 'позавчера', 'через', 'после', 'назад', 'следующий', 'прошлый',
+              '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'понедельник', 'вторник', 'сред', 'четверг', 'пятниц', 'суббот', 'воскресенье',
+              'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять', '.', ':', ',', ';', '-', '/', '\\', '|',
+              'десять', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто', 'сто']
+
+def preprocess(text):
+    text = text.lower()
+    text = text.replace('?', '')
+    return text
+
+def get_time_substr(sentence):
+    words = sentence.split(' ')
+    res = []
+    for word in words:
+        for time_word in time_words:
+            if time_word in word:
+                res.append(word)
+    res_str = ""
+    for elem in res:
+        res_str += elem + ' '
+    return res_str
+    
+
+def get_word_by_min_distance(sentence):
     close_word = ""
     min_distance = 100
     for station in stations_preprocessed:
-        distance = edit_distance(word, station)
+        distance = edit_distance(sentence, station)
         if(distance < min_distance):
             min_distance = distance
             close_word = station
@@ -111,13 +134,17 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):
     text = message.text
-    text = text.lower()
+    text = preprocess(text)
+    time_substr = get_time_substr(text)
+    time = dateparser.parse(time_substr)
+    print("TIME_SUBSTR = ", time_substr)
     if(text in stations_preprocessed):
        bot.reply_to(message, "Есть станция!") 
     else:
         station = get_word_by_min_distance(text)
         bot.reply_to(message, station)
-    #ot.reply_to(message, message.text)
+    if(time):
+        bot.reply_to(message, time)
  
 # @bot.message_handler(commands=['button'])
 # def button_message(message):
