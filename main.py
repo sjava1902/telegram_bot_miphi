@@ -10,6 +10,7 @@ import subprocess
 import os, sys
 from pathlib import Path
 import datetime
+from autocorrect import Speller
 
 current_station = ""
 current_time = datetime.datetime.now()
@@ -109,7 +110,10 @@ time_words = ['вчера', 'сегодня', 'завтра', 'послезав�
 
 def preprocess(text):
     text = text.lower()
+    speller = Speller('ru')
+    text = speller(text)
     text = text.replace('?', '')
+    print("PREPROCESSED TEXT = ", text)
     return text
 
 def get_time_substr(sentence):
@@ -157,26 +161,9 @@ def help(messsage):
 def photo(message):
     bot.send_message(message.chat.id, "Фото не поддерживается.")
 
-@bot.message_handler(content_types=['voice'])
-def audio(message):
-    file_info = bot.get_file(message.voice.file_id)
-    path = file_info.file_path # Вот тут-то и полный путь до файла (например: voice/file_2.oga)
-    fname = os.path.basename(path) # Преобразуем путь в имя файла (например: file_2.oga)
-    print(fname)
-    doc = requests.get('https://api.telegram.org/file/bot{0}/{1}'.format(token, file_info.file_path)) # Получаем и сохраняем присланную голосвуху (Ага, админ может в любой момент отключить удаление айдио файлов и слушать все, что ты там говоришь. А представь, что такую бяку подселят в огромный чат и она будет просто логировать все сообщения [анонимность в телеграмме, ахахаха])
-    with open(fname, 'wb') as f:
-        f.write(doc.content) # вот именно тут и сохраняется сама аудио-мессага
-    process = subprocess.run(['ffmpeg', '-i', fname, fname+'.wav'])# здесь используется страшное ПО ffmpeg, для конвертации .oga в .vaw
-    model = whisper.load_model("base")
-    result = model.transcribe(fname+'.wav')
-    bot.send_message(message.from_user.id, format(result['text'])) # Отправляем пользователю, приславшему файл, его текст
-    os.remove(fname)
-    os.remove(fname+".wav")
-
-
 # Handle all other messages with content_type 'text' (content_types defaults to ['text'])
-@bot.message_handler(func=lambda message: True)
-def echo_message(message):
+@bot.message_handler(content_types=['text'])
+def text(message):
     text = message.text
     text = preprocess(text)
     time_substr = get_time_substr(text)
@@ -202,6 +189,24 @@ def echo_message(message):
         current_time = time
     else:
         bot.reply_to(message, "Введите корректное время")
+        
+@bot.message_handler(content_types=['voice'])
+def audio(message):
+    file_info = bot.get_file(message.voice.file_id)
+    path = file_info.file_path # Вот тут-то и полный путь до файла (например: voice/file_2.oga)
+    fname = os.path.basename(path) # Преобразуем путь в имя файла (например: file_2.oga)
+    print(fname)
+    doc = requests.get('https://api.telegram.org/file/bot{0}/{1}'.format(token, file_info.file_path)) # Получаем и сохраняем присланную голосвуху (Ага, админ может в любой момент отключить удаление айдио файлов и слушать все, что ты там говоришь. А представь, что такую бяку подселят в огромный чат и она будет просто логировать все сообщения [анонимность в телеграмме, ахахаха])
+    with open(fname, 'wb') as f:
+        f.write(doc.content) # вот именно тут и сохраняется сама аудио-мессага
+    process = subprocess.run(['ffmpeg', '-i', fname, fname+'.wav'])# здесь используется страшное ПО ffmpeg, для конвертации .oga в .vaw
+    model = whisper.load_model("small")
+    result = model.transcribe(fname+'.wav')
+    bot.send_message(message.from_user.id, format(result['text'])) # Отправляем пользователю, приславшему файл, его текст
+    message.text = result['text']
+    text(message)
+    os.remove(fname)
+    os.remove(fname+".wav")
  
 # @bot.message_handler(commands=['button'])
 # def button_message(message):
