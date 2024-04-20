@@ -1,10 +1,18 @@
+# -*- coding: utf-8 -*-
 import telebot
 from telebot import types
 import nltk
 from nltk.metrics.distance import edit_distance
 import dateparser
+import requests
+import whisper
+import subprocess
+import os, sys
+from pathlib import Path
+import datetime
 
-
+current_station = ""
+current_time = datetime.datetime.now()
 token='6463803088:AAH9iVZAv71ScKwERcscNCTyY5-4wkqZ1Ew'
 bot=telebot.TeleBot(token)
 stations = ['Б.Рокоссовского', 'Черкизовская', 'Преображенск. пл', 'Сокольники СЛ', 'Красносельская', 'Комсомольск. СЛ',
@@ -83,14 +91,21 @@ stations = ['Б.Рокоссовского', 'Черкизовская', 'Пре
  'Давыдково', 'Кунцевская БКЛ', 'Терехово', 'Марьина Роща БКЛ',
  'Рижская БКЛ', 'Сокольники БКЛ', 'Текстильщики БКЛ', 'Печатники БКЛ',
  'Нагатинский З-н', 'Кленовый бульвар', 'Нижегород-я БКЛ', 'Каширская (Зам)',
- 'Нижегород-я НБС', 'К', 'Пыхтино', 'Аэропорт Внуково', 'Яхромская',
+ 'Нижегород-я НБС', 'Пыхтино', 'Аэропорт Внуково', 'Яхромская',
  'Лианозово', 'Физтех', 'Текстильщики СЦ']
 stations_preprocessed = [x.lower() for x in stations]
 
-time_words = ['вчера', 'сегодня', 'завтра', 'послезавтра', 'позавчера', 'через', 'после', 'назад', 'следующий', 'прошлый',
+time_words = ['вчера', 'сегодня', 'завтра', 'послезавтра', 'позавчера', 'через', 'после', 'назад', 'следующ', 'прошл', 'недел', 'прошедш'
+              'январ', 'феврал', 'март', 'апрел', 'май', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр',
               '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'понедельник', 'вторник', 'сред', 'четверг', 'пятниц', 'суббот', 'воскресенье',
               'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять', '.', ':', ',', ';', '-', '/', '\\', '|',
-              'десять', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто', 'сто']
+              'десять', 'двадцать', 'тридцать', 'сорок', 'пятьдесят', 'шестьдесят', 'семьдесят', 'восемьдесят', 'девяносто', 'сто',
+              
+              'yesterday', 'today', 'tomorrow', 'the day after tomorrow', 'the day before yesterday', 'through', 'field', 'back', 'next', 'passed', 'weeks', 'past'
+              'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December',
+              '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ' Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+              'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', '.', ':', ',', ';', '-', '/', '\\', '|',
+              'ten', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred']
 
 def preprocess(text):
     text = text.lower()
@@ -104,6 +119,7 @@ def get_time_substr(sentence):
         for time_word in time_words:
             if time_word in word:
                 res.append(word)
+                break
     res_str = ""
     for elem in res:
         res_str += elem + ' '
@@ -122,13 +138,39 @@ def get_word_by_min_distance(sentence):
         station_preprocessed = station.lower()
         if(close_word == station_preprocessed):
             close_word = station
-    return close_word
+    if min_distance >= 3:
+        return close_word
+    else:
+        return ""
     
 
 # Handle '/start' and '/help'
-@bot.message_handler(commands=['help', 'start'])
-def send_welcome(message):
-    bot.reply_to(message, "Привет! Введи запрос!")
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "Введите какую информацию о пассажиропотоке в какой день и на какой станции Вы хотите узнать!")
+    
+@bot.message_handler(commands=['help'])
+def help(messsage):
+    bot.reply_to(messsage, "Доступные команды: /start, /help")
+    
+@bot.message_handler(content_types=['photo'])
+def photo(message):
+    bot.send_message(message.chat.id, "Фото не поддерживается.")
+
+@bot.message_handler(content_types=['voice'])
+def audio(message):
+    file_info = bot.get_file(message.voice.file_id)
+    path = file_info.file_path # Вот тут-то и полный путь до файла (например: voice/file_2.oga)
+    fname = os.path.basename(path) # Преобразуем путь в имя файла (например: file_2.oga)
+    print(fname)
+    doc = requests.get('https://api.telegram.org/file/bot{0}/{1}'.format(token, file_info.file_path)) # Получаем и сохраняем присланную голосвуху (Ага, админ может в любой момент отключить удаление айдио файлов и слушать все, что ты там говоришь. А представь, что такую бяку подселят в огромный чат и она будет просто логировать все сообщения [анонимность в телеграмме, ахахаха])
+    with open(fname, 'wb') as f:
+        f.write(doc.content) # вот именно тут и сохраняется сама аудио-мессага
+    process = subprocess.run(['ffmpeg', '-i', fname, fname+'.wav'])# здесь используется страшное ПО ffmpeg, для конвертации .oga в .vaw
+    model = whisper.load_model("base")
+    result = model.transcribe(fname+'.wav')
+    bot.send_message(message.from_user.id, format(result['text'])) # Отправляем пользователю, приславшему файл, его текст
+
 
 # Handle all other messages with content_type 'text' (content_types defaults to ['text'])
 @bot.message_handler(func=lambda message: True)
@@ -137,14 +179,27 @@ def echo_message(message):
     text = preprocess(text)
     time_substr = get_time_substr(text)
     time = dateparser.parse(time_substr)
-    print("TIME_SUBSTR = ", time_substr)
-    if(text in stations_preprocessed):
-       bot.reply_to(message, "Есть станция!") 
-    else:
+    stationIsCorrect = False
+    
+    for station in stations_preprocessed:
+        if station in text:
+            stationIsCorrect = True
+            bot.reply_to(message, station)
+            current_station = station
+            break 
+    if not stationIsCorrect:
         station = get_word_by_min_distance(text)
-        bot.reply_to(message, station)
+        if station:
+            bot.reply_to(message, station)
+            current_station = station
+        else:
+            bot.reply_to(message, "Введите корректную станцию")
+
     if(time):
         bot.reply_to(message, time)
+        current_time = time
+    else:
+        bot.reply_to(message, "Введите корректное время")
  
 # @bot.message_handler(commands=['button'])
 # def button_message(message):
