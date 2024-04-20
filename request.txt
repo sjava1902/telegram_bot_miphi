@@ -7,3 +7,5 @@ subprocess
 import datetime
 pyaspeller
 setuptools-rust
+pandas
+openpyxl

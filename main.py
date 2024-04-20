@@ -10,12 +10,10 @@ import subprocess
 import os, sys
 from pathlib import Path
 import datetime
+from datetime import date
 from pyaspeller import YandexSpeller
+import pandas as pd
 
-current_station = ""
-current_time = datetime.datetime.now()
-token='6463803088:AAH9iVZAv71ScKwERcscNCTyY5-4wkqZ1Ew'
-bot=telebot.TeleBot(token)
 stations = ['Б.Рокоссовского', 'Черкизовская', 'Преображенск. пл', 'Сокольники СЛ', 'Красносельская', 'Комсомольск. СЛ',
  'Красные ворота', 'Чистые пруды', 'Лубянка', 'Охотный ряд',
  'Кропоткинская', 'Парк культуры СЛ', 'Фрунзенская', 'Спортивная',
@@ -95,7 +93,12 @@ stations = ['Б.Рокоссовского', 'Черкизовская', 'Пре
  'Нижегород-я НБС', 'Пыхтино', 'Аэропорт Внуково', 'Яхромская',
  'Лианозово', 'Физтех', 'Текстильщики СЦ']
 stations_preprocessed = [x.lower() for x in stations]
-
+current_station = ""
+current_date = date.today()
+initial_date = date(2024, 4, 3)
+delta_days = (current_date - initial_date).days
+token='6463803088:AAH9iVZAv71ScKwERcscNCTyY5-4wkqZ1Ew'
+bot=telebot.TeleBot(token)
 time_words = ['вчера', 'сегодня', 'завтра', 'послезавтра', 'позавчера', 'через', 'после', 'назад', 'следующ', 'прошл', 'недел', 'прошедш'
               'январ', 'феврал', 'март', 'апрел', 'май', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр',
               '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'понедельник', 'вторник', 'сред', 'четверг', 'пятниц', 'суббот', 'воскресенье',
@@ -107,6 +110,16 @@ time_words = ['вчера', 'сегодня', 'завтра', 'послезав�
               '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ' Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
               'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', '.', ':', ',', ';', '-', '/', '\\', '|',
               'ten', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred']
+delta_time_words = ['вчера', 'сегодня', 'завтра', 'послезавтра', 'позавчера', 'через', 'назад']
+
+df = pd.read_excel('Датасет.xlsx')
+def find_count(days, station):
+    max_date = df['Date'].max()  
+    start_date = max_date - pd.Timedelta(days=days)  
+    start_index = df[df['Date'] == start_date].index
+    count = df.loc[start_index, station].iloc[0]
+    return count
+
 
 def preprocess(text):
     text = text.lower()
@@ -115,7 +128,7 @@ def preprocess(text):
     print("PREPROCESSED TEXT = ", text)
     return text
 
-def get_time_substr(sentence):
+def get_time_substr(sentence, time_words):
     words = sentence.split(' ')
     res = []
     for word in words:
@@ -127,6 +140,7 @@ def get_time_substr(sentence):
     for elem in res:
         res_str += elem + ' '
     return res_str
+
     
 
 def get_word_by_min_distance(sentence):
@@ -141,10 +155,7 @@ def get_word_by_min_distance(sentence):
         station_preprocessed = station.lower()
         if(close_word == station_preprocessed):
             close_word = station
-    if min_distance >= 3:
-        return close_word
-    else:
-        return ""
+    return close_word
     
 
 # Handle '/start' and '/help'
@@ -165,15 +176,24 @@ def photo(message):
 def text(message):
     text = message.text
     text = preprocess(text)
-    time_substr = get_time_substr(text)
+    isRelativeDate = False
+    time_substr = get_time_substr(text, delta_time_words)
+    if(time_substr):
+        isRelativeDate = True
+    else:
+        time_substr = get_time_substr(text, time_words)
+    print('TIME_SUBSTR = ', time_substr)
     time = dateparser.parse(time_substr)
+    print("TIME = ", time)
     stationIsCorrect = False
+    timeIsCorrect = False
     
     for station in stations_preprocessed:
         if station in text:
             stationIsCorrect = True
             bot.reply_to(message, station)
             current_station = station
+            station = get_word_by_min_distance(station)
             break 
     if not stationIsCorrect:
         station = get_word_by_min_distance(text)
@@ -186,8 +206,20 @@ def text(message):
     if(time):
         bot.reply_to(message, time)
         current_time = time
+        timeIsCorrect = True
     else:
         bot.reply_to(message, "Введите корректное время")
+    
+     
+    if stationIsCorrect and timeIsCorrect:
+        count = 0
+        if isRelativeDate:
+            count = (current_date - time.date()).days
+        else:
+            count = (initial_date - time.date()).days
+        print("COUNT = ", count)
+        count = find_count(count, station)
+        bot.send_message(message.chat.id, count)
         
 @bot.message_handler(content_types=['voice'])
 def audio(message):
@@ -214,4 +246,5 @@ def audio(message):
 #     markup.add(item1)
 #     bot.send_message(message.chat.id,'Выберите что вам надо',reply_markup=markup)
 
-bot.infinity_polling()
+if __name__ == '__main__':
+    bot.infinity_polling()
