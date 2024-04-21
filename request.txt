@@ -9,3 +9,5 @@ pyaspeller
 setuptools-rust
 pandas
 openpyxl
+lightgbm
+scikit-learn
