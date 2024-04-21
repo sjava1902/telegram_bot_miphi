@@ -5,7 +5,7 @@ import nltk
 from nltk.metrics.distance import edit_distance
 import dateparser
 import requests
-import whisper
+#import whisper
 import subprocess
 import os, sys
 from pathlib import Path
