@@ -16,6 +16,27 @@ import pandas as pd
 import joblib
 import lightgbm
 from dateutil.relativedelta import relativedelta
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from difflib import SequenceMatcher
+from natasha import (
+    Segmenter,
+    MorphVocab,   
+    NewsEmbedding,
+    NewsMorphTagger,
+    NewsSyntaxParser,
+    NewsNERTagger,  
+    PER,
+    NamesExtractor,
+    DatesExtractor,
+    MoneyExtractor,
+    AddrExtractor,
+    Doc
+)
+from pymystem3 import Mystem
+
+nltk.download('stopwords')
+nltk.download('punkt')
 
 current_date = date.today()
 initial_date = date(2024, 4, 3)
@@ -39,7 +60,13 @@ load_dir = 'models'
 df = pd.read_excel('data_final.xlsx')
 # Получаем список станций
 stations = df.columns[1:]  # Первый столбец содержит даты, поэтому начинаем с индекса 1
+print("before")
+for station in stations:
+    station = station.split(' ')[0]
+print("after")
 stations_preprocessed = [x.lower() for x in stations]
+print(stations_preprocessed)
+
 station_models={}
 loaded_models = {}
 
@@ -56,6 +83,19 @@ for i, station in enumerate(stations):
     loaded_models[station] = joblib.load(filename)
 
 print(stations)
+
+def predict_station(sentence):
+    max_similarity = 0
+    predicted_station = None
+    for word in sentence.split():
+        for station in stations_preprocessed:
+            station = station.split(' ')[0]
+            print("!!!", station)
+            similarity = SequenceMatcher(None, word.lower(), station.lower()).ratio()
+            if similarity > max_similarity:
+                max_similarity = similarity
+                predicted_station = station
+    return predicted_station
 
 def find_count(days, station):
     max_date = df['Date'].max()  
@@ -84,9 +124,50 @@ def find_future(days, station):
     
     return prediction, date
 
+def remove_stop_words(text):
+    stop_words = set(stopwords.words('russian'))
+    word_tokens = word_tokenize(text)
+    #print("word_tokens = ", word_tokens)
+    # converts the words in word_tokens to lower case and then checks whether 
+    #they are present in stop_words or not
+    #filtered_sentence = [w for w in word_tokens if not w.lower() in stop_words]
+    #with no lower case conversion
+    filtered_text = ""
+    for w in word_tokens:
+        if w not in stop_words:
+            filtered_text += w + " "
+    return filtered_text
+
+
+segmenter = Segmenter()
+morph_vocab = MorphVocab()
+emb = NewsEmbedding()
+morph_tagger = NewsMorphTagger(emb)
+syntax_parser = NewsSyntaxParser(emb)
+ner_tagger = NewsNERTagger(emb)
+def lemmatization(text):
+    doc = Doc(text)
+    doc.segment(segmenter)
+    doc.tag_morph(morph_tagger)
+    doc.parse_syntax(syntax_parser)
+    doc.tag_ner(ner_tagger)
+
+    res = ""
+    for token in doc.tokens:
+        token.lemmatize(morph_vocab)
+        res += token.lemma + " "
+    return res
+ 
+print("LEMMATIZATION START")
+for station in stations:
+    station = lemmatization(station)
+print("LEMMATIZATION DONE")
+    
 
 def preprocess(text):
     text = text.lower()
+    text = remove_stop_words(text)
+    #text = lemmatization(text)
     text = text.replace(',', '')
     text = text.replace('.', '')
     speller = YandexSpeller()
@@ -96,18 +177,29 @@ def preprocess(text):
 
 def get_time_substr(sentence, time_words):
     words = sentence.split(' ')
-    res = []
+    time_res, other_res = [], []
     for word in words:
+        isTimeWord = False
         for time_word in time_words:
             if time_word in word:
-                res.append(word)
+                time_res.append(word)
+                isTimeWord = True
                 break
+        if not isTimeWord:
+            other_res.append(word)
+            
     res_str = ""
-    for elem in res:
+    for elem in time_res:
         res_str += elem + ' '
-    return res_str
+        
+    other_str = ""
+    for elem in other_res:
+        other_str += elem + ' '
+        
+    return res_str, other_str
 
 def get_word_by_min_distance(sentence):
+    #sentence = sentence.split(' ')
     close_word = ""
     min_distance = 200
     for station in stations_preprocessed:
@@ -145,31 +237,48 @@ def text(message):
     text = message.text
     text = preprocess(text)
     isRelativeDate = False
-    time_substr = get_time_substr(text, delta_time_words)
+    time_substr, other_substr = get_time_substr(text, delta_time_words)
     if(time_substr):
-        time_substr = get_time_substr(text, time_words)
+        time_substr, other_substr = get_time_substr(text, time_words)
         isRelativeDate = True
     else:
-        time_substr = get_time_substr(text, time_words)
+        time_substr, other_substr = get_time_substr(text, time_words)
+    time_substr = time_substr.strip(" ")
+    other_substr = other_substr.strip(" ")
     print('TIME_SUBSTR = ', time_substr)
+    print('OTHER_SUBSTR = ', other_substr)
     time = dateparser.parse(time_substr)
     print("TIME = ", time)
     stationIsCorrect = False
     timeIsCorrect = False
     
-    for station in stations_preprocessed:
-        if station in text:
-            stationIsCorrect = True
-            #bot.reply_to(message, station)
-            station = get_word_by_min_distance(station)
-            break 
-    if not stationIsCorrect:
-        station = get_word_by_min_distance(text)
-        if station:
-            #bot.reply_to(message, station)
-            stationIsCorrect = True
-        else:
-            bot.reply_to(message, "Введите корректную станцию")
+    curr_station = predict_station(other_substr)
+    if curr_station:
+        stationIsCorrect = True
+        #bot.reply_to(message, "Введите корректную станцию")
+    #curr_station = get_word_by_min_distance(curr_station)
+    #print("CURR_STATION == ", curr_station)
+    for s in stations:
+        if curr_station in s.lower():
+            curr_station = s
+            break
+            
+    
+    # for station in stations_preprocessed:
+    #     if station in other_substr:
+    #         stationIsCorrect = True
+    #         #bot.reply_to(message, station)
+    #         print("STATION BEFORE MID DISTANCE = ", station)
+    #         station = get_word_by_min_distance(station)
+    #         print("STATION AFTER MIN DISTANCE = ", station)
+    #         break 
+    # if not stationIsCorrect:
+    #     station = get_word_by_min_distance(other_substr)
+    #     if station:
+    #         #bot.reply_to(message, station)
+    #         stationIsCorrect = True
+    #     else:
+    #         bot.reply_to(message, "Введите корректную станцию")
 
     if(time):
         #bot.reply_to(message, time)
@@ -185,13 +294,13 @@ def text(message):
             count_days = (initial_date - time.date()).days
         print("COUNT = ", count_days)
         initial_date -= relativedelta(days=count_days)
-        
+        print("STATION TO MODEL = ", curr_station)
         if count_days >=0 :
-            count = find_count(count_days, station)
-            output_message = f'На станции {station} число пассажиров {count}. Дата {initial_date}'
+            count = find_count(count_days, curr_station)
+            output_message = f'На станции {curr_station} число пассажиров {count}. Дата {initial_date}'
         else:
-            count, _ = find_future(count_days, station)
-            output_message = f'На станции {station} прогнозируемое число пассажиров {count}. Дата {initial_date}'
+            count, _ = find_future(count_days, curr_station)
+            output_message = f'На станции {curr_station} прогнозируемое число пассажиров {count}. Дата {initial_date}'
         bot.send_message(message.chat.id, output_message)
         
 @bot.message_handler(content_types=['voice'])

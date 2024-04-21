@@ -11,3 +11,6 @@ pandas
 openpyxl
 lightgbm
 scikit-learn
+natasha
+deeppavlov
+pymystem3
