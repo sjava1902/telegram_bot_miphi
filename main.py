@@ -5,7 +5,7 @@ import nltk
 from nltk.metrics.distance import edit_distance
 import dateparser
 import requests
-#import whisper
+import whisper
 import subprocess
 import os, sys
 from pathlib import Path
@@ -82,6 +82,7 @@ for i, station in enumerate(stations):
     # Загрузка моделей
     loaded_models[station] = joblib.load(filename)
 
+stations = stations.to_list()
 print(stations)
 
 def predict_station(sentence):
@@ -176,12 +177,13 @@ def preprocess(text):
     return text
 
 def get_time_substr(sentence, time_words):
+    sentence = sentence.lower()
     words = sentence.split(' ')
     time_res, other_res = [], []
     for word in words:
         isTimeWord = False
         for time_word in time_words:
-            if time_word in word:
+            if time_word == word:
                 time_res.append(word)
                 isTimeWord = True
                 break
@@ -258,7 +260,10 @@ def text(message):
         #bot.reply_to(message, "Введите корректную станцию")
     #curr_station = get_word_by_min_distance(curr_station)
     #print("CURR_STATION == ", curr_station)
+    print("==>> STATION = ", stations)
     for s in stations:
+        if not s:
+            continue
         if curr_station in s.lower():
             curr_station = s
             break
